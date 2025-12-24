@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'channels',
+    'django_celery_beat',
     
     # Local apps
     'public',
@@ -66,8 +67,13 @@ CHANNEL_LAYERS = {
     },
 }
 
-# Database - not needed for public API, using file-based cache instead
-DATABASES = {}
+# Database - SQLite for historical data storage
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
+    }
+}
 
 # REST Framework
 REST_FRAMEWORK = {
@@ -86,9 +92,14 @@ CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_METHODS = ['GET', 'OPTIONS']
 CORS_ALLOW_HEADERS = ['Content-Type']
 
-# Cache configuration (1 hour for DDoS protection)
+# Cache configuration
 CACHES = {
     'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': 'redis://127.0.0.1:6379/1',
+        'TIMEOUT': 3600,  # 1 hour default
+    },
+    'file': {
         'BACKEND': 'django.core.cache.backends.filebased.FileBasedCache',
         'LOCATION': BASE_DIR / 'cache',
         'TIMEOUT': 3600,  # 1 hour
@@ -119,3 +130,18 @@ if not DEBUG:
     SECURE_CONTENT_TYPE_NOSNIFF = True
     SECURE_BROWSER_XSS_FILTER = True
     X_FRAME_OPTIONS = 'DENY'
+
+# Celery Configuration
+CELERY_BROKER_URL = 'redis://127.0.0.1:6379/0'
+CELERY_RESULT_BACKEND = 'redis://127.0.0.1:6379/0'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'UTC'
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+# CSGO.NET Configuration
+CSGONET_CACHE_KEY = 'csgonet:cases'
+CSGONET_CACHE_TTL = 3600  # 1 hour backup TTL
+CSGONET_WEBSOCKET_URL = 'wss://csgo.net/websocket'
+CSGONET_WEBSOCKET_TIMEOUT = 30  # seconds to wait for data

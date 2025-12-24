@@ -8,6 +8,7 @@ from datetime import datetime
 
 from django.conf import settings
 from django.core.cache import cache
+from django.http import JsonResponse
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -181,3 +182,37 @@ class HealthView(APIView):
             "service": "api.runah.pt",
             "timestamp": datetime.now().isoformat()
         })
+
+
+class CSGONetCasesView(APIView):
+    """
+    Public endpoint to get CSGO.NET case data.
+    
+    Data is served directly from Redis cache for maximum speed.
+    Cache is refreshed every 15 minutes by Celery task.
+    
+    Returns: case data including prices, items, and expected returns
+    """
+    
+    def get(self, request):
+        # Read directly from Redis cache
+        cached_data = cache.get(settings.CSGONET_CACHE_KEY)
+        
+        if cached_data:
+            # Parse JSON if stored as string
+            if isinstance(cached_data, str):
+                data = json.loads(cached_data)
+            else:
+                data = cached_data
+            
+            # Return the cached JSON directly (no serializer needed)
+            return JsonResponse(data, safe=False)
+        
+        # Cache miss - return empty response with message
+        return JsonResponse({
+            "success": False,
+            "error": "Case data not available. Please try again later.",
+            "last_updated": None,
+            "cases_count": 0,
+            "cases": []
+        }, status=503)
