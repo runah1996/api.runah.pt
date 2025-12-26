@@ -110,7 +110,7 @@ CACHES = {
 GIVEAWAY_CACHE_DURATION = 3600  # 1 hour
 
 # Path to giveaway config file
-GIVEAWAY_CONFIG_PATH = '/var/www/html/runah/public/assets/js/config.js'
+GIVEAWAY_CONFIG_PATH = '/var/www/html/runah/frontend/assets/js/config.js'
 GIVEAWAY_BASE_URL = 'https://runah.pt'
 
 # Internationalization
