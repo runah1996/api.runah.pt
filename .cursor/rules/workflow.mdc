@@ -1,0 +1,128 @@
+---
+alwaysApply: true
+---
+# Git Workflow
+
+## After Writing Code
+
+**Always commit and push after completing a feature or fix:**
+
+```bash
+cd /var/www/html/api.runah.pt
+git add -A
+git commit -m "<type>(<scope>): <subject>"
+git push
+```
+
+## Branches
+
+| Branch | Purpose |
+|--------|---------|
+| `main` | Production-ready code |
+| `develop` | Integration branch |
+| `feature/<name>` | New features |
+| `fix/<name>` | Bug fixes |
+
+## Commit Message Format
+
+```
+<type>(<scope>): <subject>
+```
+
+### Types
+
+| Type | Use When |
+|------|----------|
+| `feat` | Adding new functionality |
+| `fix` | Fixing a bug |
+| `refactor` | Code restructuring without behavior change |
+| `perf` | Performance improvements |
+| `test` | Adding or updating tests |
+| `docs` | Documentation only |
+| `chore` | Build, config, tooling changes |
+
+### Scopes
+
+| Scope | Area |
+|-------|------|
+| `public` | Public app (views, models, tasks) |
+| `cases` | Case analytics system |
+| `giveaway` | Giveaway endpoints |
+| `websocket` | WebSocket consumers |
+| `celery` | Background tasks |
+| `config` | Django settings |
+| `cache` | Redis/caching |
+
+### Examples
+
+```
+feat(cases): add volatility calculation for risk levels
+fix(celery): correct retry logic for failed tasks
+perf(cache): optimize Redis key structure
+refactor(public): split views into separate modules
+```
+
+## Repository
+
+- **Remote**: https://github.com/runah1996/api.runah.pt
+- **User**: runah1996
+- **Email**: hugo.carvalho.1996@hotmail.com
+
+---
+
+## Deployment Workflow
+
+### After Code Changes
+
+```bash
+# 1. Commit and push
+cd /var/www/html/api.runah.pt
+git add -A
+git commit -m "type(scope): description"
+git push
+
+# 2. If models changed - run migrations
+source venv/bin/activate
+python manage.py migrate
+
+# 3. Restart services if needed
+sudo systemctl restart api-runah-daphne
+sudo systemctl restart api-runah-celery
+sudo systemctl restart api-runah-celery-beat
+```
+
+### Quick Restart All Services
+
+```bash
+sudo systemctl restart api-runah-daphne api-runah-celery api-runah-celery-beat
+```
+
+---
+
+## End of Session Procedure
+
+**CRITICAL: At the end of EVERY work session, ALWAYS do these steps:**
+
+### 1. Verify Changes Work
+```bash
+# Check services are running
+sudo systemctl status api-runah-daphne api-runah-celery
+
+# Test endpoint
+curl https://api.runah.pt/cases/
+```
+
+### 2. Commit & Push
+```bash
+cd /var/www/html/api.runah.pt
+git add -A
+git commit -m "type(scope): description"
+git push
+```
+
+### 3. Document if Needed
+If significant changes were made, update:
+- `README.md` - API documentation
+- Add comments to complex code
+
+**This ensures project state is always documented for the next session.**

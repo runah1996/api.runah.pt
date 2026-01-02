@@ -1,0 +1,284 @@
+---
+alwaysApply: true
+---
+# Django API Standards
+
+## Technology Stack
+
+| Technology | Purpose |
+|---|---|
+| **Django 5.x** | Web framework |
+| **Django REST Framework** | API endpoints |
+| **Celery** | Background tasks |
+| **Redis** | Cache & message broker |
+| **Channels** | WebSocket support |
+| **SQLite** | Database (lightweight storage) |
+
+---
+
+## Project Structure
+
+```
+api.runah.pt/
+├── config/              # Django project settings
+│   ├── settings.py      # Main configuration
+│   ├── urls.py          # Root URL routing
+│   ├── celery.py        # Celery configuration
+│   ├── asgi.py          # ASGI for WebSockets
+│   └── wsgi.py          # WSGI for HTTP
+├── public/              # Main app (public API)
+│   ├── models.py        # Database models
+│   ├── views.py         # API views
+│   ├── urls.py          # App URL routing
+│   ├── tasks.py         # Celery tasks
+│   ├── consumers.py     # WebSocket consumers
+│   ├── routing.py       # WebSocket routing
+│   └── migrations/      # Database migrations
+├── cache/               # File-based cache storage
+├── examples/            # API usage examples
+├── manage.py            # Django CLI
+├── requirements.txt     # Python dependencies
+└── db.sqlite3           # SQLite database
+```
+
+---
+
+## Core Principles
+
+### Function-Based Views (FBVs) for Simple Endpoints
+```python
+# ✅ CORRECT - Simple endpoint
+@api_view(['GET'])
+def get_cases(request):
+    data = cache.get('csgonet:cases')
+    return Response(json.loads(data))
+```
+
+### Class-Based Views (CBVs) for Complex Logic
+```python
+# ✅ CORRECT - Complex CRUD
+class CaseViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Case.objects.all()
+    serializer_class = CaseSerializer
+```
+
+### Always Use Type Hints
+```python
+def calculate_expected_return(case_data: dict) -> float | None:
+    """Calculate RTP for a case."""
+    ...
+```
+
+---
+
+## Model Guidelines
+
+### Model Structure
+```python
+class Case(models.Model):
+    """Represents a case from CSGO.NET."""
+    
+    # Constants at top
+    RISK_LOW = 'low'
+    RISK_MEDIUM = 'medium'
+    RISK_HIGH = 'high'
+    RISK_CHOICES = [
+        (RISK_LOW, 'Low Risk'),
+        (RISK_MEDIUM, 'Medium Risk'),
+        (RISK_HIGH, 'High Risk'),
+    ]
+    
+    # Primary key
+    case_id = models.CharField(max_length=100, primary_key=True)
+    
+    # Required fields
+    name = models.CharField(max_length=200)
+    price_usd = models.DecimalField(max_digits=10, decimal_places=4)
+    
+    # Optional/calculated fields
+    expected_return = models.DecimalField(null=True, blank=True)
+    risk_level = models.CharField(choices=RISK_CHOICES, null=True)
+    
+    # Timestamps
+    last_updated = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'csgonet_case'
+        ordering = ['-last_updated']
+
+    def __str__(self):
+        return f"{self.name} ({self.case_id})"
+```
+
+### Migration Commands
+```bash
+# Create migration
+python manage.py makemigrations public --name descriptive_name
+
+# Apply migrations
+python manage.py migrate public
+```
+
+---
+
+## Celery Tasks
+
+### Task Structure
+```python
+@shared_task(bind=True, max_retries=3, default_retry_delay=60)
+def refresh_csgonet_cases(self):
+    """
+    Celery task to refresh case data.
+    Runs every 15 minutes via Celery Beat.
+    """
+    try:
+        # 1. Fetch data
+        data = fetch_external_data()
+        
+        # 2. Process data
+        processed = process_data(data)
+        
+        # 3. Update cache
+        cache.set('key', json.dumps(processed), TTL)
+        
+        # 4. Save to DB if changed
+        save_if_changed(processed)
+        
+        return {"success": True, "count": len(processed)}
+        
+    except Exception as e:
+        logger.error(f"Task failed: {e}")
+        raise self.retry(exc=e)
+```
+
+### Task Commands
+```bash
+# Start Celery worker
+celery -A config worker -l info
+
+# Start Celery beat (scheduler)
+celery -A config beat -l info
+
+# Test task manually
+python manage.py shell -c "from public.tasks import refresh_csgonet_cases; refresh_csgonet_cases.delay()"
+```
+
+---
+
+## Caching Strategy
+
+### Redis Cache (Primary)
+```python
+from django.core.cache import cache
+
+# Set with TTL
+cache.set('csgonet:cases', json.dumps(data), 3600)
+
+# Get
+data = cache.get('csgonet:cases')
+if data:
+    return json.loads(data)
+```
+
+### Cache Keys Convention
+| Key Pattern | TTL | Description |
+|-------------|-----|-------------|
+| `csgonet:cases` | 1 hour | All case data |
+| `giveaway:active` | 1 hour | Active giveaway info |
+
+---
+
+## API Response Format
+
+### Success Response
+```python
+{
+    "success": True,
+    "last_updated": "2026-01-02T10:30:00Z",
+    "cases_count": 342,
+    "cases": [...]
+}
+```
+
+### Error Response
+```python
+{
+    "success": False,
+    "error": "No data available",
+    "code": "NO_DATA"
+}
+```
+
+---
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DJANGO_SECRET_KEY` | Secret key | *required* |
+| `DJANGO_DEBUG` | Debug mode | `False` |
+
+---
+
+## Service Management
+
+### Systemd Services
+```bash
+# Daphne (ASGI server)
+sudo systemctl status api-runah-daphne
+sudo systemctl restart api-runah-daphne
+
+# Celery Worker
+sudo systemctl status api-runah-celery
+sudo systemctl restart api-runah-celery
+
+# Celery Beat
+sudo systemctl status api-runah-celery-beat
+sudo systemctl restart api-runah-celery-beat
+```
+
+### Logs
+```bash
+# Daphne logs
+sudo journalctl -u api-runah-daphne -f
+
+# Celery logs
+sudo journalctl -u api-runah-celery -f
+```
+
+---
+
+## Testing
+
+```bash
+# Run all tests
+python manage.py test public
+
+# Test specific
+python manage.py test public.tests.TestCaseModel
+
+# Shell for manual testing
+python manage.py shell
+```
+
+---
+
+## Common Commands
+
+```bash
+# Activate venv
+source venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Create superuser (if needed)
+python manage.py createsuperuser
+
+# Collect static files
+python manage.py collectstatic
+
+# Check for issues
+python manage.py check
+```
