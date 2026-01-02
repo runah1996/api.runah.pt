@@ -222,6 +222,71 @@ def calculate_expected_return(case_data):
     return round((expected_value / case_price) * 100, 2)
 
 
+def calculate_volatility(case_data):
+    """
+    Calculate volatility metrics for a case (High Risk / High Reward).
+    
+    Returns a dict with:
+    - volatility: Coefficient of variation (std_dev / expected_value) - higher = more volatile
+    - risk_level: 'low', 'medium', or 'high'
+    - max_multiplier: Best possible return (max item price / case price)
+    
+    A case with same RTP but higher volatility means:
+    - More "high risk / high reward" - rare expensive items, many cheap items
+    - Lower volatility = more predictable outcomes around the expected value
+    """
+    import math
+    
+    items = case_data.get("items", [])
+    case_price = case_data.get("price_usd", 0)
+    
+    if not items or not case_price or case_price <= 0:
+        return None
+    
+    # Calculate expected value (mean return)
+    expected_value = sum(
+        (item.get("price_usd") or 0) * ((item.get("probability") or 0) / 100)
+        for item in items
+    )
+    
+    if expected_value <= 0:
+        return None
+    
+    # Calculate variance: E[(X - μ)²] = Σ p_i * (x_i - μ)²
+    variance = sum(
+        ((item.get("probability") or 0) / 100) * ((item.get("price_usd") or 0) - expected_value) ** 2
+        for item in items
+    )
+    
+    # Standard deviation
+    std_dev = math.sqrt(variance)
+    
+    # Coefficient of Variation (CV) = std_dev / mean
+    # Higher CV = more volatile / risky
+    cv = (std_dev / expected_value) if expected_value > 0 else 0
+    
+    # Find max possible return multiplier
+    max_item_price = max((item.get("price_usd") or 0) for item in items)
+    max_multiplier = round(max_item_price / case_price, 2) if case_price > 0 else 0
+    
+    # Classify risk level based on coefficient of variation
+    # Thresholds based on real CSGO.NET data distribution:
+    # - Median CV is ~1.45, 75th percentile is ~3.15
+    # - Mining cases with huge jackpots have CV 20-35
+    if cv < 1.5:
+        risk_level = 'low'      # ~50% of cases - predictable outcomes
+    elif cv < 4.0:
+        risk_level = 'medium'   # ~40% of cases - moderate variance
+    else:
+        risk_level = 'high'     # ~10% of cases - mining/jackpot cases with extreme variance
+    
+    return {
+        'volatility': round(cv, 4),
+        'risk_level': risk_level,
+        'max_multiplier': max_multiplier
+    }
+
+
 def hash_items(items_queryset):
     """Create a hash of item data for comparison."""
     items_data = [
@@ -268,6 +333,19 @@ def save_case_if_changed(case_data):
         if existing.expected_return != new_expected_return:
             changes.append(("expected_return", str(existing.expected_return), str(new_expected_return)))
         
+        # Check volatility changes
+        new_volatility = Decimal(str(case_data.get("volatility", 0))) if case_data.get("volatility") else None
+        if existing.volatility != new_volatility:
+            changes.append(("volatility", str(existing.volatility), str(new_volatility)))
+            
+        new_risk_level = case_data.get("risk_level")
+        if existing.risk_level != new_risk_level:
+            changes.append(("risk_level", str(existing.risk_level), str(new_risk_level)))
+            
+        new_max_multiplier = Decimal(str(case_data.get("max_multiplier", 0))) if case_data.get("max_multiplier") else None
+        if existing.max_multiplier != new_max_multiplier:
+            changes.append(("max_multiplier", str(existing.max_multiplier), str(new_max_multiplier)))
+        
         # Check if items changed
         existing_hash = hash_items(existing.items.all())
         new_hash = hash_items_data(case_data.get("items", []))
@@ -286,6 +364,9 @@ def save_case_if_changed(case_data):
                 existing.price_eur = new_price_eur
                 existing.is_mining_case = case_data.get("is_mining_case", False)
                 existing.expected_return = new_expected_return
+                existing.volatility = new_volatility
+                existing.risk_level = new_risk_level
+                existing.max_multiplier = new_max_multiplier
                 existing.save()
                 
                 # Update items if changed
@@ -328,6 +409,9 @@ def save_case_if_changed(case_data):
                 price_eur=Decimal(str(case_data.get("price_eur", 0))) if case_data.get("price_eur") else None,
                 is_mining_case=case_data.get("is_mining_case", False),
                 expected_return=Decimal(str(case_data.get("expected_return", 0))) if case_data.get("expected_return") else None,
+                volatility=Decimal(str(case_data.get("volatility", 0))) if case_data.get("volatility") else None,
+                risk_level=case_data.get("risk_level"),
+                max_multiplier=Decimal(str(case_data.get("max_multiplier", 0))) if case_data.get("max_multiplier") else None,
             )
             
             for item in case_data.get("items", []):
@@ -369,11 +453,18 @@ def refresh_csgonet_cases(self):
         
         logger.info(f"Fetched {len(cases)} cases from CSGO.NET")
         
-        # 2. Calculate expected return for each case
+        # 2. Calculate expected return and volatility for each case
         for case in cases:
             expected_return = calculate_expected_return(case)
             if expected_return is not None:
                 case["expected_return"] = expected_return
+            
+            # Calculate volatility (high risk / high reward metrics)
+            volatility_data = calculate_volatility(case)
+            if volatility_data is not None:
+                case["volatility"] = volatility_data["volatility"]
+                case["risk_level"] = volatility_data["risk_level"]
+                case["max_multiplier"] = volatility_data["max_multiplier"]
         
         # 3. Prepare cache data
         cache_data = {

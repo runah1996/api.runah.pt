@@ -10,6 +10,16 @@ class Case(models.Model):
     Represents a case from CSGO.NET
     Data is stored here only when changes are detected.
     """
+    # Risk level choices for volatility classification
+    RISK_LOW = 'low'
+    RISK_MEDIUM = 'medium'
+    RISK_HIGH = 'high'
+    RISK_CHOICES = [
+        (RISK_LOW, 'Low Risk'),
+        (RISK_MEDIUM, 'Medium Risk'),
+        (RISK_HIGH, 'High Risk'),
+    ]
+    
     case_id = models.CharField(max_length=100, primary_key=True)
     name = models.CharField(max_length=200)
     image_url = models.URLField(max_length=500, blank=True)
@@ -18,6 +28,13 @@ class Case(models.Model):
     price_eur = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True)
     is_mining_case = models.BooleanField(default=False)
     expected_return = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    # Volatility metrics for high risk/high reward classification
+    volatility = models.DecimalField(max_digits=10, decimal_places=4, null=True, blank=True, 
+                                     help_text="Coefficient of variation - higher = more volatile")
+    risk_level = models.CharField(max_length=10, choices=RISK_CHOICES, null=True, blank=True,
+                                  help_text="Categorized risk level: low, medium, high")
+    max_multiplier = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True,
+                                         help_text="Highest possible return multiplier (best item / case price)")
     last_updated = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
